@@ -1,0 +1,241 @@
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <stdio.h>
+#include <string.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <errno.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/select.h>
+
+int main(int argc, char** argv) 
+{
+	//HERE YOU STORE THE PORT NUMBER THAT WAS ENTERED AS AN ARGUMENT WHEN THE CLIENT SPAWNED
+	char port_number[10];
+	strcpy(port_number, argv[1]);
+	//"port_number" IS STORING THE ENTERED PORT_NUMBER 
+
+	struct addrinfo hints, *ai;
+	int server_sock;
+	
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags	= AI_PASSIVE;
+	
+	ai = NULL;
+	int res;
+	int i, j, k;
+	if((res = getaddrinfo(NULL, "9010", &hints, &ai)) != 0) 
+	{
+		printf("GETADDRESSINFO() FAILED\n");
+		return 0;
+	}
+
+	//server_sock is the socket that this client is using to communicate with the dedicated server
+
+	if((server_sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol)) == -1) 
+	{
+		printf("CREATING SOCKET FAILED\n");
+		return 0;
+	}	
+	
+	if((res = connect(server_sock, ai->ai_addr, ai->ai_addrlen)) == -1) 
+	{
+		printf("CONNECTION FAILED\n");
+		return 0;	
+	}
+
+	
+	// USE system IN C
+	
+	puts("check\n");
+	// BY APPENDING ALL THE FILES INTO A SINGLE STRING AND THEN SENDING IT TO THE SERVER
+         
+       /* FILE *fp;
+        fp = fopen("directory.txt","w");
+        char files[10000], packet1[10000];
+        char ad1[]="1 ";
+        system("ls >> directory.txt");
+        
+        fgets(files,10000,fp);
+        strcat(port_number,files);
+        strcat(ad1,port_number);
+        strcpy(packet1,ad1);*/
+        
+        char ch,files[10000];
+        char packet1[]="1 ";
+        FILE *fp;
+       
+        system("ls > directory.txt");
+        fp=fopen("directory.txt","r");
+        
+        int co=0;
+        while((ch=fgetc(fp))!=EOF)
+        { 
+          if(ch == '\n')
+          {
+             ch=' ';
+          } 
+          files[co]=ch;
+          co++;
+        }
+        files[co]='\0';
+        fgets(files,10000,fp); 
+        //puts(files);    
+         strcat(packet1,port_number);
+         strcat(packet1," ");
+         strcat(packet1,files);
+        //strcat(port_number,files);
+        //strcat(ad1,port_number);
+       // strcpy(packet1,ad1);
+       // printf("%ld",sizeof packet1);
+        if (send(server_sock, packet1, strlen(packet1), 0) == -1){
+			printf("Error in sending !\n");
+			exit(0);
+		}
+       
+	pid_t pid;
+	pid = fork();
+
+	// FORKING YOUR CLIENT PROGRAM HERE IS NECESSARY BECAUSE YOUR CLIENT WILL BE WORKING BOTH AS A CLIENT AS WELL AS A SERVER AT ANY GIVEN TIME ..
+
+	if(pid == 0)
+	{
+		//IF ITS A CHILD PROCESS, MAKE IT RUN AS A CLIENT-CLIENT.
+	  	// i.e. IT TAKES IN THE FILE REQUEST AND MAKES A PACKET-2 OUT OF IT AND THEN SENDS IT TO THE SERVER
+           while(1){
+                int clientSocket;
+                struct sockaddr_in serverAddr;
+	        socklen_t addr_size;
+                char filename[100],packet3[7],buffer1[10000];
+                char packet2[]="2 ";
+                printf("enter the name of the file required : ");
+                gets(filename);
+                strcat(packet2," ");
+                strcat(packet2,filename);
+                //strcpy(packet2, ad2);
+                if (send(server_sock, packet2, strlen(packet2), 0) == -1){
+			printf("Error in sending !\n");
+			exit(0);
+		}
+		// IN RETURN IT GETS THE PACKET-3 MENTIONED IN THE SERVER CODE..
+                if (recv(server_sock, packet3, 7, 0) <= 0){
+			printf("Error recieving content \n");
+			exit(0);
+                   }
+		// FROM THE PACKET-3, IT SELECTS THE FIRST (or any) PORT NUMBER OF THE PEERS AND MAKES A TCP CONNECTION TO IT AND BECOMES THE CLIENT     
+                puts(packet3);
+
+                char s[]=" ";
+                char *token;
+
+                token = strtok(packet3,s);
+                token = strtok(NULL,s);
+                //printf("%s",token);
+                //now token contains the port number to which we need to connect to
+		
+                clientSocket = socket(PF_INET, SOCK_STREAM, 0);
+		if (clientSocket == -1){
+			printf("Error creating socket !\n");
+			exit(0);
+		}
+
+		serverAddr.sin_family = AF_INET;
+		serverAddr.sin_port = htons(atoi(token));
+		serverAddr.sin_addr.s_addr = INADDR_ANY;
+ 		memset(serverAddr.sin_zero, '\0', sizeof serverAddr.sin_zero);  
+		addr_size = sizeof serverAddr;
+
+		if (connect(clientSocket, (struct sockaddr *) &serverAddr, addr_size) == -1){
+			printf("Error in connecting !\n");
+			exit(0);
+		}
+                
+               if (send(clientSocket, packet2, 8, 0) == -1){
+			printf("Error in sending !\n");
+			exit(0);
+		}
+                if (recv(clientSocket, buffer1, sizeof(buffer1), 0) <= 0){
+			printf("Error recieving content \n");
+			exit(0);
+                }
+                else
+               printf("file recieved.contents are :\n");
+               puts(buffer1);
+               
+               close(clientSocket);
+          }
+		
+	}
+	else
+	{
+		//IF ITS THE PARENT PROCESS, MAKE IT RUN AS A CLIENT-SERVER.
+		//i.e IT NOW MAKES A SOCKET sockfd AND LISTENS FOR INCOMING CONNECTIONS..
+		// AS SOON AS A CONNECTION COMES IN, IT ACCEPTS THAT CONNECTION via newsockfd
+            while(1){
+                int welcomeSocket,newSocket;
+                struct sockaddr_in serverAddr;
+                struct sockaddr_storage serverStorage;
+	        socklen_t addr_size;
+                char filename[8],buffer1[100];
+                welcomeSocket = socket(PF_INET, SOCK_STREAM, 0);
+	if (welcomeSocket == -1){
+		printf("Error creating socket !\n");
+		exit(0);
+	}  
+	
+	serverAddr.sin_family = AF_INET;
+	serverAddr.sin_port = htons(atoi(port_number));
+	serverAddr.sin_addr.s_addr = INADDR_ANY;   
+	memset(serverAddr.sin_zero, '\0', sizeof serverAddr.sin_zero);  
+	addr_size = sizeof (serverStorage);
+
+	if (bind(welcomeSocket, (struct sockaddr *) &serverAddr, sizeof(serverAddr)) == -1){
+		printf("Error in binding !\n");
+		exit(0);
+	}
+
+	if(listen(welcomeSocket,5)==0)
+		printf("Listening...\n");
+	else{
+		printf("Error in connection !\n");
+		exit(0);
+	}
+	
+	newSocket = accept(welcomeSocket, (struct sockaddr *) &serverStorage, &addr_size);
+	if (newSocket == -1){
+		printf("Error accepting \n");
+		exit(0);
+	} 	
+		// ALL COMMUNICATION WITH THE REQUESTING CLIENT HAPPENS VIA THIS newsockfd
+		// AGAIN TAKE IN THE FILENAME FROM THE CLIENT 
+		// OPEN UP THE FILE
+		// SEND THE CONTENTS OF THE FILE
+        if (recv(newSocket, filename, 8, 0) <= 0){
+		printf("Error recieving \n");
+		exit(0);
+	}
+        puts(filename);
+         int g;
+       //char filename[8]="2  a.txt";
+       char fn[5];
+       for(g=0;g<5;g++)
+       fn[g]=filename[g+3];
+      // fn[5]='\0';
+        FILE *fp1;
+        fp1 = fopen(fn,"r");
+        fgets(buffer1,100,fp1);
+        
+        if (send(newSocket, buffer1, sizeof(buffer1), 0) <= 0){
+		printf("Error sending \n");
+		exit(0);
+	}
+        close(newSocket);
+        close(welcomeSocket);
+    }
+		
+	}
+}
